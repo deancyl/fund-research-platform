@@ -24,7 +24,7 @@ logger.addHandler(_handler)
 class FundResearchTUI(App):
     CSS = """
     Screen { background: #0d1117; color: #c9d1d9; }
-    #main-grid { grid-size: 2 2; grid-gap: 1 2; height: 75%; padding: 1; }
+    #main-grid { grid-size: 2 2; grid-gutter: 1 2; height: 75%; padding: 1; }
     DataTable { border: solid #30363d; background: #161b22; height: 100%; }
     DataTable:focus { border: solid #58a6ff; }
     #chart { border: solid #30363d; background: #161b22; padding: 1; }
