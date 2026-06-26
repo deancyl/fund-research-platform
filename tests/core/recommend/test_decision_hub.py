@@ -32,17 +32,19 @@ class TestLLMAdjustmentCap:
     """LLM can only shift the score by ±15%."""
 
     def test_llm_cannot_override_sell_to_buy(self) -> None:
-        """Score 0.20 → max adjustment +0.15 = 0.35, still below BUY threshold (0.75)."""
+        """Score 0.20 + LLM BUY→positive × 0.15 = 0.35, still below BUY threshold."""
         hub = DecisionHub()
         result = hub.decide(factor_score=0.20, llm_advice="BUY", llm_confidence=1.0)
         assert result.verdict != Verdict.BUY
         assert result.verdict != Verdict.ACCUMULATE
 
-    def test_llm_can_upgrade_hold_to_accumulate(self) -> None:
-        """Score 0.55 + max 0.15 = 0.70 → crosses ACCUMULATE threshold (0.60)."""
+    def test_bullish_llm_aligns_with_bullish_factor(self) -> None:
+        """LLM BUY(2) + factor ACCUMULATE(1) → both bullish → sign-aligned → adjustment applied."""
         hub = DecisionHub()
-        result = hub.decide(factor_score=0.55, llm_advice="ACCUMULATE", llm_confidence=1.0)
-        assert result.verdict in (Verdict.ACCUMULATE, Verdict.HOLD)
+        result = hub.decide(factor_score=0.62, llm_advice="BUY", llm_confidence=1.0)
+        # Both bullish (factor=ACCUMULATE dir=1, LLM=BUY dir=2) → adjustment of +0.15 should apply
+        assert result.llm_adjustment > 0
+        assert result.adjusted_score > result.factor_score
 
 
 class TestSafetyChecks:

@@ -171,6 +171,7 @@ def generate_rebalance_plan(
     current_date: date,
     total_portfolio_value: float,
     expected_alpha_pct: float = 0.03,
+    expected_holding_days: int = 90,
 ) -> RebalancePlan:
     """
     Generate a complete rebalancing plan.
@@ -181,6 +182,8 @@ def generate_rebalance_plan(
         current_date: Reference date for holding period calculation.
         total_portfolio_value: Total portfolio value in CNY.
         expected_alpha_pct: Expected annual alpha (fee penalty threshold).
+        expected_holding_days: Expected holding period — used to amortize
+                               one-time redemption fee against holding-period alpha.
 
     Returns:
         RebalancePlan with actions, timeline, friction cost, and AI note.
@@ -191,6 +194,7 @@ def generate_rebalance_plan(
         current_date=current_date,
         total_portfolio_value=total_portfolio_value,
         expected_alpha_pct=expected_alpha_pct,
+        expected_holding_days=expected_holding_days,
     )
 
 

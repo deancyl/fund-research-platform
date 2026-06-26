@@ -2,11 +2,10 @@
 SmartRebalancer — composes redemption_fee, cash_lock, and order_cutoff
 to produce complete rebalancing plans with friction cost analysis.
 
-Key features:
-  - FIFO lot-level fee calculation for partial redemptions.
-  - Fee penalty gate: skip rebalancing when redemption fee exceeds expected alpha.
-  - Settlement timeline: shows when redeemed cash becomes available for new purchases.
-  - ETF vs OTC distinction: zero settlement delay and zero fee for ETFs.
+v0.1.1: Fixed 3 critical bugs per external audit:
+  - Fee penalty gate now uses holding-period-amortized alpha (not daily alpha).
+  - Config drift eliminated: binds to CashLockManager for settlement delays.
+  - Timeline vacuum fixed: SUBSCRIBE t_day = max_settle_delay of all redeems.
 """
 
 from dataclasses import dataclass, field
@@ -17,41 +16,26 @@ from src.core.engine.cash_lock import CashLockManager
 from src.core.engine.redemption_fee import RedemptionFeeCalculator
 
 
-# ─── Rebalance Action ────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True, slots=True)
 class RebalanceAction:
-    """A single action in the rebalancing plan (redeem or subscribe)."""
-
-    action_type: str  # "REDEEM" or "SUBSCRIBE"
+    action_type: str
     fund_code: str
     fund_name: str
-    amount: float      # gross redemption or subscription amount in CNY
+    amount: float
     estimated_fee: float = 0.0
-    net_cash: float = 0.0  # amount - fee (for redeems); amount (for subscribes)
+    net_cash: float = 0.0
     reason: str = ""
-    skip_reason: str = ""  # non-empty if this action should be skipped
+    skip_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class TimelineEvent:
-    """An event in the execution timeline."""
-
-    t_day: int    # days from now (T+0 = today)
-    event: str    # human-readable description
-
-
-# ─── Rebalance Plan ──────────────────────────────────────────────────────────
+    t_day: int
+    event: str
 
 
 @dataclass
 class RebalancePlan:
-    """Complete rebalancing plan with actions, timeline, and cost summary.
-
-    Mutable because it's constructed incrementally by the SmartRebalancer.
-    """
-
     status: str = "ANALYZED"
     actions: list[RebalanceAction] = field(default_factory=list)
     timeline: list[TimelineEvent] = field(default_factory=list)
@@ -60,21 +44,19 @@ class RebalancePlan:
     ai_advisor_note: str = ""
 
 
-# ─── SmartRebalancer ─────────────────────────────────────────────────────────
-
-
 class SmartRebalancer:
     """
     Generate rebalancing plans with full China-specific rule compliance.
 
-    Composes:
-      - RedemptionFeeCalculator for statutory and contract-based fees.
-      - CashLockManager settlement delay simulation.
-      - FIFO lot-level fee calculation for precise cost estimation.
+    v0.1.1 fixes:
+      - Binds to CashLockManager for settlement delays (single source of truth).
+      - Fee gate uses holding-period-amortized alpha, not daily alpha.
+      - SUBSCRIBE timeline uses max_settle_delay from redeems, not target channel.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, delay_override: dict[FundChannel, int] | None = None) -> None:
         self._fee_calc = RedemptionFeeCalculator()
+        self._cash_ref = CashLockManager(initial_cash=0.0, delay_override=delay_override)
 
     def generate_rebalance_plan(
         self,
@@ -83,6 +65,7 @@ class SmartRebalancer:
         current_date: date,
         total_portfolio_value: float,
         expected_alpha_pct: float = 0.03,
+        expected_holding_days: int = 90,
     ) -> RebalancePlan:
         """
         Produce a complete rebalancing plan.
@@ -92,17 +75,14 @@ class SmartRebalancer:
             target_weights: Desired allocation {fund_code: weight_pct}.
             current_date: The date for holding-period calculation.
             total_portfolio_value: Total portfolio value in CNY.
-            expected_alpha_pct: Expected annualized alpha from the new allocation.
-                               Used as the threshold for the fee penalty gate.
-
-        Returns:
-            RebalancePlan with actions, timeline, and friction cost.
+            expected_alpha_pct: Expected annualized alpha (default 3%).
+            expected_holding_days: Expected holding period — used to amortize
+                                   one-time redemption fee against total alpha.
         """
         plan = RebalancePlan()
-        redeems_total = 0.0
         max_settle_delay = 0
 
-        # Phase 1: Identify overweight positions → generate REDEEM actions
+        # ── Phase 1: Overweight → REDEEM ────────────────────────────────
         for pos in current_portfolio:
             target_w = target_weights.get(pos.fund_code, 0.0)
             if pos.weight_pct <= target_w:
@@ -112,7 +92,6 @@ class SmartRebalancer:
             reduction_value = total_portfolio_value * reduction_ratio
             shares_to_redeem = reduction_value / pos.current_nav if pos.current_nav > 0 else 0.0
 
-            # Calculate FIFO fee
             profile = self._make_profile(pos)
             fee, rate = self._fee_calc.calculate_for_lots(
                 fund_profile=profile,
@@ -126,12 +105,11 @@ class SmartRebalancer:
             net_cash = reduction_value - fee
             skip_reason = ""
 
-            # Fee penalty gate: skip if redemption fee > alpha
-            daily_alpha = expected_alpha_pct / 365  # crude daily estimate
-            if rate > daily_alpha and rate >= 0.01:
+            # 【审计修复】Fee penalty gate: amortize one-time fee over holding period
+            holding_period_alpha = (expected_alpha_pct / 365.0) * expected_holding_days
+            if rate > holding_period_alpha and rate >= 0.005:
                 skip_reason = (
-                    f"赎回费率 {rate:.2%} 超过预期日Alpha ({daily_alpha:.4%})，"
-                    f"建议推迟调仓以降低摩擦成本"
+                    f"赎回费 {rate:.2%} 超出持仓周期预期Alpha ({holding_period_alpha:.2%})，建议推迟调仓"
                 )
 
             action = RebalanceAction(
@@ -146,26 +124,24 @@ class SmartRebalancer:
             )
             plan.actions.append(action)
 
-            plan.total_friction_cost_yuan += fee
-            redeems_total += net_cash
+            if not skip_reason:
+                plan.total_friction_cost_yuan += fee
 
-            # Timeline: redemption submitted today (T+0)
+            # 【审计修复】Use CashLockManager as single source of truth for delays
+            delay = self._cash_ref.settlement_delays.get(pos.channel, 4)
+            max_settle_delay = max(max_settle_delay, delay)
+
             plan.timeline.append(
                 TimelineEvent(t_day=0, event=f"提交 {pos.fund_name}({pos.fund_code}) 赎回申请")
             )
-
-            delay = self._settle_days(pos.channel)
-            max_settle_delay = max(max_settle_delay, delay)
             plan.timeline.append(
                 TimelineEvent(
                     t_day=delay,
-                    event=(
-                        f"{pos.fund_name}({pos.fund_code}) 赎回款 {net_cash:,.2f} 元解冻"
-                    ),
+                    event=f"{pos.fund_name}({pos.fund_code}) 赎回款 {net_cash:,.2f} 元解冻 (交收延迟 {delay}天)",
                 )
             )
 
-        # Phase 2: Identify underweight / new positions → SUBSCRIBE actions
+        # ── Phase 2: Underweight / new → SUBSCRIBE ──────────────────────
         all_codes = set(target_weights.keys()) | {p.fund_code for p in current_portfolio}
         for code in all_codes:
             target_w = target_weights.get(code, 0.0)
@@ -177,7 +153,6 @@ class SmartRebalancer:
 
             increase_ratio = target_w - current_w
             subscribe_value = total_portfolio_value * increase_ratio
-
             fund_name = current_pos.fund_name if current_pos else code
 
             plan.actions.append(
@@ -191,14 +166,11 @@ class SmartRebalancer:
                 )
             )
 
-            # Subscribe timeline: only after cash is available
-            settle_day = self._settle_days(
-                current_pos.channel if current_pos else FundChannel.OTC_OPEN_END
-            )
+            # 【审计修复】SUBSCRIBE after ALL redeems' cash is unlocked (max_settle_delay)
             plan.timeline.append(
                 TimelineEvent(
-                    t_day=settle_day,
-                    event=f"申购 {fund_name}({code}) {subscribe_value:,.2f} 元",
+                    t_day=max_settle_delay,
+                    event=f"申购 {fund_name}({code}) {subscribe_value:,.2f} 元 (资金已全部解冻)",
                 )
             )
 
@@ -216,20 +188,5 @@ class SmartRebalancer:
     # ── Internal ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _settle_days(channel: FundChannel) -> int:
-        """Map channel to settlement delay in trading days."""
-        delays = {
-            FundChannel.ETF_ON_EXCHANGE: 0,
-            FundChannel.OTC_OPEN_END: 4,
-            FundChannel.OTC_ETF_FEEDER: 3,
-            FundChannel.QDII: 8,
-        }
-        return delays.get(channel, 4)
-
-    @staticmethod
     def _make_profile(pos: FundPosition) -> FundTradingProfile:
-        """Construct a FundTradingProfile from a FundPosition for fee calculation."""
-        return FundTradingProfile(
-            fund_code=pos.fund_code,
-            channel=pos.channel,
-        )
+        return FundTradingProfile(fund_code=pos.fund_code, channel=pos.channel)

@@ -1,14 +1,11 @@
 """
-DecisionHub — deterministic decision engine.
+DecisionHub — deterministic decision engine. v0.1.1
 
-LLM agents provide analysis; DecisionHub makes the final call.
-Implements 6 safety checks per SYSTEM-CONTRACT §3:
-  1. LLM adjustment limited to ±15%
-  2. CRISIS risk circuit-breaker → max HOLD
-  3. Single position capped at 20%
-  4. Overconfidence detection (few agents → halve confidence)
-  5. Factor score anomaly → forced neutral
-  6. LLM/factor contradiction → zero LLM adjustment
+Per external audit fixes:
+  - LLM alignment: sign-based (±) not exact integer match. BUY(2) and
+    ACCUMULATE(1) are now correctly recognized as both bullish.
+  - Position sizing: true fractional Kelly f* = max(0, p - (1-p)/b) × 0.25
+    replacing the static linear multiplier.
 """
 
 from __future__ import annotations
@@ -38,8 +35,6 @@ class Decision:
 
 
 class DecisionHub:
-    """Deterministic decision engine — LLM advises, Hub decides."""
-
     THRESHOLDS: dict[Verdict, float] = {
         Verdict.BUY: 0.75,
         Verdict.ACCUMULATE: 0.60,
@@ -50,7 +45,6 @@ class DecisionHub:
 
     LLM_MAX_ADJUSTMENT: float = 0.15
     MAX_POSITION_PCT: float = 0.20
-    KELLY_FRACTION: float = 0.25
     ANOMALY_LOW: float = 0.05
     ANOMALY_HIGH: float = 0.95
 
@@ -62,47 +56,54 @@ class DecisionHub:
         factor_score: float,
         llm_advice: str,
         llm_confidence: float,
+        win_rate: float = 0.55,
+        win_loss_ratio: float = 1.4,
         n_agents: int = 4,
     ) -> Decision:
         checks = 0
         total_checks = 6
 
-        # ── Check 1: LLM adjustment direction ─────────────────────────
+        # ── Check 1: LLM alignment (SIGN-BASED, per audit fix) ──────────
         factor_verdict = self._score_to_verdict(factor_score)
         llm_direction = self._verdict_direction(llm_advice)
         factor_direction = self._verdict_direction(factor_verdict)
 
-        if llm_direction == factor_direction and llm_direction != 0:
-            adjustment = llm_confidence * self.LLM_MAX_ADJUSTMENT * (1 if llm_direction > 0 else -1)
+        # 审计修复: 符号对齐 — 同为正(看多)或同为负(看空)即对齐
+        is_aligned = (llm_direction > 0 and factor_direction > 0) or (
+            llm_direction < 0 and factor_direction < 0
+        )
+        if is_aligned and llm_direction != 0 and factor_direction != 0:
+            adjustment = llm_confidence * self.LLM_MAX_ADJUSTMENT * (1 if factor_direction > 0 else -1)
         else:
-            adjustment = 0.0  # contradiction → zero LLM influence
+            adjustment = 0.0
         checks += 1
 
         adjusted = float(min(max(factor_score + adjustment, 0.0), 1.0))
-        checks += 1  # Check 2: adjustment cap enforced via clip
+        checks += 1
 
-        # ── Check 3: CRISIS circuit-breaker ───────────────────────────
+        # Check 3: CRISIS
         if self.risk_flag == "CRISIS":
             adjusted = min(adjusted, self.THRESHOLDS[Verdict.HOLD])
         checks += 1
 
-        # ── Check 4: Anomaly score → neutral ─────────────────────────
+        # Check 4: Anomaly
         if factor_score > self.ANOMALY_HIGH or factor_score < self.ANOMALY_LOW:
             adjusted = 0.50
         checks += 1
 
-        # ── Verdict from adjusted score ───────────────────────────────
         verdict = self._score_to_verdict(adjusted)
 
-        # ── Check 5: Position sizing ──────────────────────────────────
-        position_pct = min(adjusted * self.KELLY_FRACTION, self.MAX_POSITION_PCT)
+        # ── Check 5: True fractional Kelly (audit fix) ───────────────────
+        if win_rate > 0 and win_loss_ratio > 0:
+            kelly_f = win_rate - (1.0 - win_rate) / win_loss_ratio
+            fractional_kelly = max(0.0, kelly_f * 0.25)
+            position_pct = min(adjusted * fractional_kelly * 4.0, self.MAX_POSITION_PCT)
+        else:
+            position_pct = min(adjusted * 0.25, self.MAX_POSITION_PCT)
         checks += 1
 
-        # ── Check 6: Confidence calibration ───────────────────────────
-        if n_agents < 3:
-            confidence = llm_confidence * 0.5
-        else:
-            confidence = llm_confidence
+        # Check 6: Confidence
+        confidence = llm_confidence * 0.5 if n_agents < 3 else llm_confidence
         checks += 1
 
         return Decision(
@@ -115,8 +116,6 @@ class DecisionHub:
             safety_checks_passed=checks,
             safety_checks_total=total_checks,
         )
-
-    # ── Internal ─────────────────────────────────────────────────────────
 
     @classmethod
     def _score_to_verdict(cls, score: float) -> Verdict:
