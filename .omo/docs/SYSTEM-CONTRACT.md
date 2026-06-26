@@ -157,3 +157,10 @@
 - **零文本手打**: Web仪表盘必须提供一键注入按钮，禁止要求用户手动输入JSON。
 - **图表真实绑定**: ECharts时间线必须读取后端返回的timeline数组(来自CashLockManager真实延迟)，禁止用`i*5000`公式模拟。
 - **sync def路由**: 调用CPU密集计算的路由必须声明为`def`(非async)，由FastAPI线程池隔离，防止asyncio饥饿。
+
+### 14. 金融计量规则（审计#5沉淀 — v0.1.8）
+
+- **因子模型时序设计**: `decompose_returns`的因子入参必须是形状为(n,3)的时序数组(每日因子收益率)，严禁使用`np.full(n, scalar)`复制静态标量——后者产生绝对共线性(Perfect Multicollinearity)，OLS矩阵秩坍塌为1。
+- **CPCV逐窗口剪裁**: Combinatorial Purged CV必须对每个连续测试窗口的左右边界分别执行Purge和Embargo，严禁对全局train_idx使用`[:-purge_n]`一刀切截断——这会彻底摧毁Combinatorial的多路径自由组合特性。
+- **DSR概率输出**: `deflated_sharpe_ratio`返回值必须经`stats.norm.cdf()`映射为[0,1]置信概率，严禁直接返回原始z-score统计量(>1的值会使风控门控判定失效)。
+- **异构因子去量纲**: 北向资金流与机构主力流因统计口径不同存在数量级鸿沟，融合前必须在横截面上执行z-score标准化或百分位排名(sigmoid映射)，严禁原始值直接相加平均——会导致大因子吞噬小因子信号。

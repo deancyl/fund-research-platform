@@ -1357,17 +1357,17 @@ openai>=1.50.0  # DeepSeek API兼容
 
 ## 附录C: 实施进度追踪 (v0.1.0 → v0.1.7)
 
-**最后更新**: 2026-06-26 · **当前版本**: v0.1.7 · **测试**: 435/435 GREEN
+**最后更新**: 2026-06-26 · **当前版本**: v0.1.8 · **测试**: 557/557 GREEN
 
-### 总体进度: 47/89 (53%)
+### 总体进度: 52/89 (58%)
 
 | Phase | 已实现 | 总数 | 进度 |
 |-------|--------|------|------|
 | 1: 基础设施 | 7 | 9 | 78% |
-| 2: 分析引擎 | 3 | 7 | 43% |
+| 2: 分析引擎 | 4 | 7 | 57% |
 | 3: 回测引擎 | 7 | 13 | 54% |
-| 4: 策略库 | 12 | 15 | 80% |
-| 5: 市场状态 | 3 | 8 | 38% |
+| 4: 策略库 | 14 | 15 | 93% |
+| 5: 市场状态 | 5 | 8 | 63% |
 | 6: AI 决策 | 5 | 13 | 38% |
 | 7: TUI 终端 | 7 | 12 | 58% |
 | 8: Web+验证 | 3 | 12 | 25% |
@@ -1384,8 +1384,9 @@ openai>=1.50.0  # DeepSeek API兼容
 | v0.1.5 | TUI Pilot自动化测试管线 + AI CI闭环脚本 | 435 |
 | v0.1.6 | 冷启动自动注水 (on_ready hydration) + Pilot冷启动检测 | 435 |
 | v0.1.7 | Web专业级分窗格大屏 (Vue3+Tailwind+ECharts) | 435 |
+| v0.1.8 | 审计#5: 4计量硬伤(factor_model共线性/CPCV剪裁/DSR概率/soe_reform量纲) + CrowdingMonitor/LoT/CH-3 + 4新策略 | 557 |
 
-### 已实现策略 (14/20)
+### 已实现策略 (18/20)
 
 | # | 策略 | 类别 | 文件 |
 |---|------|------|------|
@@ -1393,6 +1394,7 @@ openai>=1.50.0  # DeepSeek API兼容
 | S2 | ETF 多因子动量 | 动量 | `momentum/etf_momentum.py` |
 | S3 | 双动量 GEM | 动量 | `momentum/dual_momentum.py` |
 | S4 | 行业动量轮动 | 动量 | `momentum/sector_rotation.py` |
+| S5 | 52周新高动量 | 动量 | `momentum/fiftytwo_week_high.py` |
 | S6 | PE/PB 估值分位带 | 均值回归 | `mean_reversion/pe_pb_band.py` |
 | S7 | RSI 均值回归+固收 | 均值回归 | `mean_reversion/rsi_fixed_income.py` |
 | S8 | 红利低波择时 | 均值回归 | `mean_reversion/dividend_timing.py` |
@@ -1401,6 +1403,18 @@ openai>=1.50.0  # DeepSeek API兼容
 | S11 | 宏观四状态轮动 | 因子轮动 | `factor_rotation/macro_rotation.py` |
 | S13 | ETF 低波轮动 | 因子轮动 | `factor_rotation/low_vol_rotation.py` |
 | S14 | 春季效应 | 因子轮动 | `factor_rotation/spring_festival.py` |
+| S15 | 国企改革红利(中特估) | 中国特色 | `china_specific/soe_reform.py` |
+| S18 | 三层防御组合 | 组合 | `portfolio/defensive.py` |
+| S19 | 进取型ETF组合 | 组合 | `portfolio/aggressive.py` |
+
+### 已知待推进项
+
+- Phase 3: VectorBT/Backtrader 回测引擎集成
+- Phase 5: HMM 分类器 / GARCH 模块
+- Phase 6: LLM Agent 实现 (Macro/Quant/Risk/CIO LangGraph)
+- Phase 8: Vue3 完整前端构建 / 30日纸上交易模拟
+- Phase 2: fincore/jh-factors 外部库集成
+- Phase 4: S12/S16/S17/S20 剩余策略
 
 ### TUI 稳定性保障体系
 
