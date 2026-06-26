@@ -28,8 +28,22 @@ from src.core.engine.rebalancer import RebalancePlan, SmartRebalancer
 from src.core.engine.redemption_fee import HoldingWarning, RedemptionFeeCalculator
 
 
-# ─── Engine instances (lazy) ─────────────────────────────────────────────────
+# ─── Engine factory (per audit: thread-safe, no global singletons) ──────────
 
+def create_engine_context() -> dict:
+    """Create a fresh, isolated engine context for each request."""
+    from src.core.engine.order_cutoff import OrderCutoffValidator, SimpleTradingCalendar
+    from src.core.engine.redemption_fee import RedemptionFeeCalculator
+    from src.core.engine.rebalancer import SmartRebalancer
+
+    return {
+        "cutoff": OrderCutoffValidator(calendar=SimpleTradingCalendar()),
+        "fee_calc": RedemptionFeeCalculator(),
+        "rebalancer": SmartRebalancer(),
+    }
+
+
+# Legacy singletons (kept for TUI single-user mode; Web should use factory)
 _cutoff_validator: OrderCutoffValidator | None = None
 _fee_calculator: RedemptionFeeCalculator | None = None
 _rebalancer: SmartRebalancer | None = None
@@ -198,32 +212,28 @@ def generate_rebalance_plan(
     )
 
 
-# ─── Strategy Protocol (extensibility foundation) ───────────────────────────
+# ─── Strategy Protocol ──────────────────────────────────────────────────────
+
+from src.core.strategy.base import StrategyContext
 
 
 class StrategyProtocol(Protocol):
     """
-    Contract for all trading strategies in the platform.
-
-    Every strategy must implement:
-      - name: unique identifier
-      - generate_signals(date): produce Buy/Sell/Hold signals for the given date
-      - required_data(): declare what market data the strategy needs
+    Contract for all trading strategies. v0.1.2: upgraded with full StrategyContext.
     """
 
     name: str
 
-    def generate_signals(self, dt: date) -> list[dict[str, float | str]]:
+    def generate_signals(self, ctx: StrategyContext) -> list[dict[str, float | str]]:  # noqa: F811
         """
-        Generate trading signals for a given date.
+        Generate trading signals given full execution context.
 
-        Returns: list of {fund_code, signal, confidence, reason}
+        Returns: list of {fund_code, direction, confidence, target_weight, reason}
         """
         ...
 
     def required_data(self) -> list[str]:
         """
-        Declare required data fields (e.g., ['nav', 'volume', 'pe']).
-        Used by the data layer to prefetch needed data.
+        Declare required data fields for the data layer to prefetch.
         """
         ...

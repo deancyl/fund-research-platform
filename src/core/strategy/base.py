@@ -43,7 +43,7 @@ class MarketRegime(StrEnum):
     CRISIS = "CRISIS"
 
 
-# ─── Strategy Configuration ──────────────────────────────────────────────────
+# ─── Strategy Config & Context ─────────────────────────────────────────────
 
 
 class StrategyConfig(BaseModel, frozen=True):
@@ -61,6 +61,28 @@ class StrategyConfig(BaseModel, frozen=True):
     min_holding_days: int = Field(
         default=1, ge=1, description="Minimum holding period to avoid penalty fees"
     )
+
+
+# ─── Strategy Context ──────────────────────────────────────────────────────
+
+
+class StrategyContext(BaseModel, frozen=True):
+    """
+    Full execution context passed to strategy.generate_signals().
+
+    Per audit: strategies need more than just a date — they need cash,
+    existing positions, and regime awareness to avoid overbuying.
+    """
+
+    current_date: date = Field(description="Trading date for signal generation")
+    available_cash: float = Field(default=0.0, ge=0, description="Buying power in CNY")
+    existing_positions: dict[str, float] = Field(
+        default_factory=dict, description="{fund_code: current_shares}"
+    )
+    market_regime: MarketRegime = Field(
+        default=MarketRegime.SIDEWAYS, description="Detected market regime from Layer 5"
+    )
+    total_portfolio_value: float = Field(default=0.0, ge=0)
 
 
 # ─── Strategy Base ──────────────────────────────────────────────────────────

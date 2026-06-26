@@ -69,11 +69,18 @@ class TestSafetyChecks:
         result = hub.decide(factor_score=0.80, llm_advice="BUY", llm_confidence=0.95, n_agents=1)
         assert result.confidence <= 0.5
 
-    def test_anomaly_score_resets_to_neutral(self) -> None:
-        """Factor score > 0.95 or < 0.05 → forced to 0.50."""
+    def test_nan_score_resets_to_neutral(self) -> None:
+        """NaN factor score (data error) → forced neutral. But 0.98 is VALID."""
         hub = DecisionHub()
-        result = hub.decide(factor_score=0.99, llm_advice="BUY", llm_confidence=0.8)
+        # NaN → should be caught and forced to HOLD
+        result = hub.decide(factor_score=float("nan"), llm_advice="BUY", llm_confidence=0.8)
         assert result.verdict == Verdict.HOLD
+
+    def test_high_score_not_killed(self) -> None:
+        """0.98 factor score from momentum resonance is legitimate — must NOT be capped."""
+        hub = DecisionHub()
+        result = hub.decide(factor_score=0.98, llm_advice="BUY", llm_confidence=0.8)
+        assert result.verdict == Verdict.BUY  # Should remain BUY for extreme momentum
 
 
 class TestPositionSizing:

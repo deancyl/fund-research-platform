@@ -81,6 +81,7 @@ class SmartRebalancer:
         """
         plan = RebalancePlan()
         max_settle_delay = 0
+        executable_redeem_cash = 0.0  # Only non-skipped redeems release real cash
 
         # ── Phase 1: Overweight → REDEEM ────────────────────────────────
         for pos in current_portfolio:
@@ -126,6 +127,7 @@ class SmartRebalancer:
 
             if not skip_reason:
                 plan.total_friction_cost_yuan += fee
+                executable_redeem_cash += net_cash  # Only non-skipped redeems release cash
 
             # 【审计修复】Use CashLockManager as single source of truth for delays
             delay = self._cash_ref.settlement_delays.get(pos.channel, 4)
@@ -142,6 +144,10 @@ class SmartRebalancer:
             )
 
         # ── Phase 2: Underweight / new → SUBSCRIBE ──────────────────────
+        # Constrained by actual cash from non-skipped REDEEM actions (audit fix).
+        # Exception: when NO redeems at all, assume fresh cash injection is available.
+        has_redeems = any(a.action_type == "REDEEM" for a in plan.actions)
+        deployable_cash = executable_redeem_cash if has_redeems else float("inf")
         all_codes = set(target_weights.keys()) | {p.fund_code for p in current_portfolio}
         for code in all_codes:
             target_w = target_weights.get(code, 0.0)
@@ -153,7 +159,24 @@ class SmartRebalancer:
 
             increase_ratio = target_w - current_w
             subscribe_value = total_portfolio_value * increase_ratio
+
+            # 【审计修复】Constrained by actual cash from non-skipped redeems
+            # When deployable_cash is inf (no redeems at all), use fresh cash injection.
+            if deployable_cash == float("inf"):
+                reason_suffix = ""
+            elif deployable_cash <= 0:
+                subscribe_value = 0.0
+                reason_suffix = " (无可用于申购的赎回资金)"
+            elif subscribe_value > deployable_cash:
+                subscribe_value = deployable_cash
+                reason_suffix = f" (受限于可用现金 {deployable_cash:,.2f})"
+            else:
+                reason_suffix = ""
+
             fund_name = current_pos.fund_name if current_pos else code
+
+            if subscribe_value <= 0:
+                continue  # No cash available → skip this SUBSCRIBE
 
             plan.actions.append(
                 RebalanceAction(
@@ -162,7 +185,7 @@ class SmartRebalancer:
                     fund_name=fund_name,
                     amount=round(subscribe_value, 2),
                     net_cash=round(subscribe_value, 2),
-                    reason=f"补充配置，目标仓位 {target_w:.1%}",
+                    reason=f"补充配置，目标仓位 {target_w:.1%}{reason_suffix}",
                 )
             )
 
@@ -173,6 +196,7 @@ class SmartRebalancer:
                     event=f"申购 {fund_name}({code}) {subscribe_value:,.2f} 元 (资金已全部解冻)",
                 )
             )
+            deployable_cash = deployable_cash - subscribe_value if deployable_cash != float("inf") else deployable_cash
 
         plan.cash_flow_vacuum_days = max_settle_delay
         plan.timeline.sort(key=lambda e: e.t_day)

@@ -45,8 +45,6 @@ class DecisionHub:
 
     LLM_MAX_ADJUSTMENT: float = 0.15
     MAX_POSITION_PCT: float = 0.20
-    ANOMALY_LOW: float = 0.05
-    ANOMALY_HIGH: float = 0.95
 
     def __init__(self, risk_flag: str = "NORMAL") -> None:
         self.risk_flag = risk_flag
@@ -86,8 +84,10 @@ class DecisionHub:
             adjusted = min(adjusted, self.THRESHOLDS[Verdict.HOLD])
         checks += 1
 
-        # Check 4: Anomaly
-        if factor_score > self.ANOMALY_HIGH or factor_score < self.ANOMALY_LOW:
+        # Check 4: Data validity — only block NaN/Inf, never legitimate extreme factor scores.
+        # Per audit: 0.98 from multi-factor momentum resonance is VALID alpha — killing it
+        # at 0.50 destroys S2/S14 strategies that depend on tail-event signals.
+        if factor_score != factor_score or factor_score == float("inf"):
             adjusted = 0.50
         checks += 1
 
