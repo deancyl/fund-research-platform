@@ -184,8 +184,9 @@ class FundResearchTUI(App):
         kline = get_fund_kline(fund_code, limit=40)
         profile = get_fund_profile(fund_code)
         plt.clf(); plt.theme("dark")
-        dates = [b["date"][-5:] for b in kline]
+        dates = [b["date"] for b in kline]  # full YYYY-MM-DD
         closes = [b["close"] for b in kline]
+        plt.date_form("%Y-%m-%d")
         plt.plot(dates, closes, label="close", color="cyan")
         for b in kline:
             if b["close"] >= b["open"]:
