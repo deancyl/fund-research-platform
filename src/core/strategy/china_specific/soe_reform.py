@@ -125,13 +125,37 @@ class SoeReform(BaseStrategy):
         if not market_data:
             return []
 
-        # 1. Compute composite scores for valid stocks
-        scores: list[tuple[str, float]] = []
+        # 1. Collect latest values for cross-sectional ranking
+        fund_codes: list[str] = []
+        fund_scores: list[dict[str, object]] = []
+        all_nb: list[float] = []
+        all_inst: list[float] = []
+
         for code, df in market_data.items():
             if not self._has_required_columns(df):
                 continue
-            composite = self._compute_composite_score(df)
-            scores.append((code, composite))
+            row = df.row(-1, named=True)
+            fund_codes.append(code)
+            all_nb.append(float(row["north_bound_flow"]))
+            all_inst.append(float(row["institutional_flow"]))
+            fund_scores.append({"code": code, "df": df, "div_yield": float(row["dividend_yield"])})
+
+        if not fund_codes:
+            return []
+
+        # 2. Cross-sectional percentile rank (v0.2.5 audit fix)
+        nb_ranks = _percentile_rank(np.array(all_nb, dtype=np.float64))
+        inst_ranks = _percentile_rank(np.array(all_inst, dtype=np.float64))
+
+        # 3. Compute composite scores with cross-sectional ranks
+        scores: list[tuple[str, float]] = []
+        for i, fs in enumerate(fund_scores):
+            composite = self._compute_composite_score(
+                fs["df"],  # type: ignore[arg-type]
+                dividend_yield=float(fs["div_yield"]),
+                flow_rank=(nb_ranks[i] + inst_ranks[i]) / 2.0,
+            )
+            scores.append((str(fs["code"]), composite))
 
         if not scores:
             return []
@@ -218,55 +242,34 @@ class SoeReform(BaseStrategy):
         df_cols = set(df.columns)
         return all(col in df_cols for col in _REQUIRED_FIELDS)
 
-    def _compute_composite_score(self, df: pl.DataFrame) -> float:
-        """Compute weighted composite score from latest row data.
-
-        【v0.1.8 审计修复】异构资金流必须先做横截面去量纲化，
-        防止北向资金与机构流因数量级鸿沟导致信号吞噬。
-
-        Formula:
-          div_norm = min(dividend_yield, CAP) / CAP
-          nb_z = z-score of north_bound_flow within this fund's history
-          inst_z = z-score of institutional_flow within this fund's history
-          flow_norm = sigmoid(mean(nb_z, inst_z)) → [0,1]
-          score = div_weight * div_norm + flow_weight * flow_norm
-
-        Returns:
-            Composite score in [0, 1] range.
+    def _compute_composite_score(
+        self, df: pl.DataFrame, dividend_yield: float, flow_rank: float
+    ) -> float:
         """
-        row = df.row(-1, named=True)
-        dividend_yield = float(row["dividend_yield"])
-        north_bound_flow = float(row["north_bound_flow"])
-        institutional_flow = float(row["institutional_flow"])
+        Compute weighted composite score from cross-sectional ranks.
 
-        # Normalize dividend yield: cap and scale to [0, 1]
+        【v0.2.5 审计修复】彻底移除时间序列 Expanding Window Z-Score。
+        现在由 generate_signals 在横截面上对所有标的进行 Percentile Rank 映射，
+        _compute_composite_score 只接收已去量纲化的 flow_rank ∈ [0, 1]。
+        消除了 ETF 生命周期错位的异方差灾难。
+        """
         div_norm = min(dividend_yield, _DIVIDEND_YIELD_CAP) / _DIVIDEND_YIELD_CAP
-
-        # 【v0.2.4 审计修复】根除未来函数 — 仅使用历史数据计算统计量
-        # 方法: expanding window z-score (仅用当前行及之前的数据)
-        nb_arr = df["north_bound_flow"].to_numpy().astype(np.float64)
-        inst_arr = df["institutional_flow"].to_numpy().astype(np.float64)
-
-        # 找到当前最新行的索引 (仅使用 ≤ 当前索引的历史数据)
-        latest_idx = len(nb_arr) - 1
-        if latest_idx < 1:
-            nb_z, inst_z = 0.0, 0.0
-        else:
-            nb_hist = nb_arr[: latest_idx + 1]  # 仅历史数据, 不含未来
-            inst_hist = inst_arr[: latest_idx + 1]
-
-            nb_mu, nb_sigma = float(np.mean(nb_hist)), float(np.std(nb_hist, ddof=1))
-            inst_mu, inst_sigma = float(np.mean(inst_hist)), float(np.std(inst_hist, ddof=1))
-
-            nb_z = (north_bound_flow - nb_mu) / nb_sigma if nb_sigma > 1e-12 else 0.0
-            inst_z = (institutional_flow - inst_mu) / inst_sigma if inst_sigma > 1e-12 else 0.0
-
-        # Average z-scores and map to [0,1] via sigmoid
-        flow_z_avg = (nb_z + inst_z) / 2.0
-        flow_norm = float(1.0 / (1.0 + np.exp(-flow_z_avg)))  # sigmoid(x) ∈ (0,1)
-
-        score = (
-            self.config.dividend_weight * div_norm
-            + self.config.flow_weight * flow_norm
-        )
+        score = self.config.dividend_weight * div_norm + self.config.flow_weight * flow_rank
         return float(np.clip(score, 0.0, 1.0))
+
+
+def _percentile_rank(values: np.ndarray) -> np.ndarray:
+    """Cross-sectional percentile rank mapping → [0, 1]. Identical values share the same rank."""
+    n = len(values)
+    if n <= 1:
+        return np.full(n, 0.5, dtype=np.float64)
+    # scipy-style: average rank for ties → maps to [0, 1]
+    order = np.argsort(values)
+    ranks = np.empty(n, dtype=np.float64)
+    ranks[order] = np.arange(n, dtype=np.float64)
+    # Average ranks for ties
+    uniq, inv = np.unique(values, return_inverse=True)
+    for u in range(len(uniq)):
+        mask = inv == u
+        ranks[mask] = np.mean(ranks[mask])
+    return ranks / (n - 1)
