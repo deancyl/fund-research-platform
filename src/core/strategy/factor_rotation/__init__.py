@@ -10,6 +10,11 @@ from src.core.strategy.factor_rotation.spring_festival import (
     SpringFestival,
     SpringFestivalConfig,
 )
+from src.core.strategy.factor_rotation.style_rotation import (
+    StyleQuadrant,
+    StyleRotation,
+    StyleRotationConfig,
+)
 
 __all__: list[str] = [
     "LowVolRotation",
@@ -18,4 +23,7 @@ __all__: list[str] = [
     "MacroRotationConfig",
     "SpringFestival",
     "SpringFestivalConfig",
+    "StyleQuadrant",
+    "StyleRotation",
+    "StyleRotationConfig",
 ]
