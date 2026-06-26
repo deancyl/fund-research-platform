@@ -1355,4 +1355,65 @@ openai>=1.50.0  # DeepSeek API兼容
 
 ---
 
-**文档状态**: 完整 | **版本**: v1.0 | **下次更新**: 实施开始后按Phase推进
+## 附录C: 实施进度追踪 (v0.1.0 → v0.1.7)
+
+**最后更新**: 2026-06-26 · **当前版本**: v0.1.7 · **测试**: 435/435 GREEN
+
+### 总体进度: 47/89 (53%)
+
+| Phase | 已实现 | 总数 | 进度 |
+|-------|--------|------|------|
+| 1: 基础设施 | 7 | 9 | 78% |
+| 2: 分析引擎 | 3 | 7 | 43% |
+| 3: 回测引擎 | 7 | 13 | 54% |
+| 4: 策略库 | 12 | 15 | 80% |
+| 5: 市场状态 | 3 | 8 | 38% |
+| 6: AI 决策 | 5 | 13 | 38% |
+| 7: TUI 终端 | 7 | 12 | 58% |
+| 8: Web+验证 | 3 | 12 | 25% |
+
+### 版本演进与外部审计修复记录
+
+| 版本 | 修复项 | 测试数 |
+|------|--------|--------|
+| v0.1.0 | 初始发布: Headless Core + 中国规则引擎 + TUI/Web/CLI | 311 |
+| v0.1.1 | 审计#1: 费率熔断/符号对齐/配置漂移/真空期/Kelly | 312 |
+| v0.1.2 | 审计#2: 极端分数自残/假想现金/StrategyContext/工厂函数 | 313 |
+| v0.1.3 | 审计#3: TUI CSS修复 + Web root定向 + sync def + Pydantic DTO | 313 |
+| v0.1.4 | 审计#4: 骨架屏保护 + 真实数据绑定 + Web仪表盘 + 4新策略 + 风险指标/归因/CPCV+DSR | 434 |
+| v0.1.5 | TUI Pilot自动化测试管线 + AI CI闭环脚本 | 435 |
+| v0.1.6 | 冷启动自动注水 (on_ready hydration) + Pilot冷启动检测 | 435 |
+| v0.1.7 | Web专业级分窗格大屏 (Vue3+Tailwind+ECharts) | 435 |
+
+### 已实现策略 (14/20)
+
+| # | 策略 | 类别 | 文件 |
+|---|------|------|------|
+| S1 | 因子动量轮动 | 动量 | `momentum/factor_momentum.py` |
+| S2 | ETF 多因子动量 | 动量 | `momentum/etf_momentum.py` |
+| S3 | 双动量 GEM | 动量 | `momentum/dual_momentum.py` |
+| S4 | 行业动量轮动 | 动量 | `momentum/sector_rotation.py` |
+| S6 | PE/PB 估值分位带 | 均值回归 | `mean_reversion/pe_pb_band.py` |
+| S7 | RSI 均值回归+固收 | 均值回归 | `mean_reversion/rsi_fixed_income.py` |
+| S8 | 红利低波择时 | 均值回归 | `mean_reversion/dividend_timing.py` |
+| S9 | 布林带 RSI 复合 | 均值回归 | `mean_reversion/bollinger_rsi.py` |
+| S10 | 网格交易+Hurst | 均值回归 | `mean_reversion/grid_hurst.py` |
+| S11 | 宏观四状态轮动 | 因子轮动 | `factor_rotation/macro_rotation.py` |
+| S13 | ETF 低波轮动 | 因子轮动 | `factor_rotation/low_vol_rotation.py` |
+| S14 | 春季效应 | 因子轮动 | `factor_rotation/spring_festival.py` |
+
+### TUI 稳定性保障体系
+
+1. **骨架屏保护**: `on_mount` 建立列结构, `clear(columns=False)` 仅清行
+2. **冷启动注水**: `on_ready` → `await action_refresh_portfolio()` 自动加载数据
+3. **Pilot 管线**: 6项检查 (冷启动检测/时序真空点击/热键轰炸/输入攻击/数据咬合/布局)
+4. **CI 闭环**: `run_ai_tui_ci.py --loop` 自动修复流水线
+
+### 已知待推进项
+
+- Phase 3: VectorBT/Backtrader 回测引擎集成
+- Phase 5: HMM 分类器 / GARCH 模块
+- Phase 6: LLM Agent 实现 (Macro/Quant/Risk/CIO LangGraph)
+- Phase 8: Vue3 完整前端构建 / 30日纸上交易模拟
+- Phase 2: fincore/jh-factors 外部库集成
+- Phase 4: S5/S15/S18/S19/S20 剩余策略

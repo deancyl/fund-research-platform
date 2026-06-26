@@ -40,12 +40,26 @@ def combinatorial_purged_cv(
         test_idx = np.concatenate([group_indices[i] for i in combo])
         train_idx = np.setdiff1d(np.arange(t), test_idx)
 
-        purge_n = int(len(train_idx) * purge_pct)
-        embargo_n = int(t * embargo_pct)
-        if purge_n > 0:
-            train_idx = train_idx[:-purge_n]
-        min_test = test_idx.min()
-        train_idx = train_idx[train_idx < (min_test - embargo_n)]
+        # 【v0.1.8 审计修复】逐连续测试窗口 Purge + Embargo
+        # 识别测试集中每个连续区间，对其左边界 Purge、右边界 Embargo
+        purge_n = max(1, int(t * purge_pct / n_splits))
+        embargo_n = max(1, int(t * embargo_pct / n_splits))
+
+        test_sorted = np.sort(test_idx)
+        # Find contiguous test windows
+        boundaries = np.where(np.diff(test_sorted) > 1)[0] + 1
+        windows = np.split(test_sorted, boundaries)
+
+        # 对每个连续测试窗口，从训练集中剔除边界附近的点
+        mask = np.ones(len(train_idx), dtype=bool)
+        for win in windows:
+            win_start, win_end = win[0], win[-1]
+            # Purge: 剔除测试窗口左侧 purge_n 个训练点
+            mask &= ~((train_idx >= win_start - purge_n) & (train_idx < win_start))
+            # Embargo: 剔除测试窗口右侧 embargo_n 个训练点
+            mask &= ~((train_idx > win_end) & (train_idx <= win_end + embargo_n))
+
+        train_idx = train_idx[mask]
 
         if len(train_idx) < 30 or len(test_idx) < 10:
             continue
@@ -111,7 +125,9 @@ def deflated_sharpe_ratio(
         * (1.0 + 0.5 * observed_sr**2 - skewness * observed_sr + (kurtosis - 3.0) / 4.0 * observed_sr**2)
     )
 
-    return float((observed_sr - e_max) / sr_se)
+    # 【v0.1.8 审计修复】使用 norm.cdf 将 z-score 映射为 [0,1] 置信概率
+    z_score = (observed_sr - e_max) / sr_se
+    return float(stats.norm.cdf(z_score))
 
 
 def minimum_track_record_length(observed_sr: float, alpha: float = 0.05) -> int:

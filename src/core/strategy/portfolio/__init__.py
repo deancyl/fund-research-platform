@@ -1,3 +1,6 @@
 """Portfolio strategies: 3-layer defensive, aggressive ETF, AI-enhanced."""
 
-__all__: list[str] = []
+from src.core.strategy.portfolio.aggressive import AggressivePortfolio
+from src.core.strategy.portfolio.defensive import DefensivePortfolio
+
+__all__ = ["AggressivePortfolio", "DefensivePortfolio"]
