@@ -242,15 +242,24 @@ class SoeReform(BaseStrategy):
         # Normalize dividend yield: cap and scale to [0, 1]
         div_norm = min(dividend_yield, _DIVIDEND_YIELD_CAP) / _DIVIDEND_YIELD_CAP
 
-        # 【v0.1.8】z-score normalize both flow series to eliminate scale bias
+        # 【v0.2.4 审计修复】根除未来函数 — 仅使用历史数据计算统计量
+        # 方法: expanding window z-score (仅用当前行及之前的数据)
         nb_arr = df["north_bound_flow"].to_numpy().astype(np.float64)
         inst_arr = df["institutional_flow"].to_numpy().astype(np.float64)
 
-        nb_mu, nb_sigma = float(np.mean(nb_arr)), float(np.std(nb_arr, ddof=1))
-        inst_mu, inst_sigma = float(np.mean(inst_arr)), float(np.std(inst_arr, ddof=1))
+        # 找到当前最新行的索引 (仅使用 ≤ 当前索引的历史数据)
+        latest_idx = len(nb_arr) - 1
+        if latest_idx < 1:
+            nb_z, inst_z = 0.0, 0.0
+        else:
+            nb_hist = nb_arr[: latest_idx + 1]  # 仅历史数据, 不含未来
+            inst_hist = inst_arr[: latest_idx + 1]
 
-        nb_z = (north_bound_flow - nb_mu) / nb_sigma if nb_sigma > 1e-12 else 0.0
-        inst_z = (institutional_flow - inst_mu) / inst_sigma if inst_sigma > 1e-12 else 0.0
+            nb_mu, nb_sigma = float(np.mean(nb_hist)), float(np.std(nb_hist, ddof=1))
+            inst_mu, inst_sigma = float(np.mean(inst_hist)), float(np.std(inst_hist, ddof=1))
+
+            nb_z = (north_bound_flow - nb_mu) / nb_sigma if nb_sigma > 1e-12 else 0.0
+            inst_z = (institutional_flow - inst_mu) / inst_sigma if inst_sigma > 1e-12 else 0.0
 
         # Average z-scores and map to [0,1] via sigmoid
         flow_z_avg = (nb_z + inst_z) / 2.0

@@ -41,23 +41,12 @@ class FactorExposure:
 def decompose_returns(
     fund_returns: np.ndarray,
     factor_returns: np.ndarray,
-    risk_free_rate: float = 0.02,
 ) -> FactorExposure:
     """
     Decompose fund returns using CH-3 factor model.
 
-    【审计修复 v0.1.8】factor_returns 现在接收形状为 (n, 3) 的时序数组，
-    列为 [mkt_excess_daily, smb_daily, vmg_daily]，而非静态标量。
-    消除了 np.full() 造成的绝对共线性错误。
-
-    Args:
-        fund_returns: Array (n,) of daily fund excess returns.
-        factor_returns: Array (n, 3) of CH-3 factor daily returns:
-                        col 0 = mkt_excess, col 1 = smb, col 2 = vmg.
-        risk_free_rate: Annual risk-free rate (default 2% for China).
-
-    Returns:
-        FactorExposure with alpha, betas, and R-squared.
+    【审计修复 v0.1.8】factor_returns 形状为 (n, 3) 时序数组。
+    【v0.2.4】移除未使用的 risk_free_rate 参数 (fund_returns 已是超额回报)。
     """
     n = len(fund_returns)
     if n < 20 or factor_returns.shape[0] != n or factor_returns.shape[1] < 3:
