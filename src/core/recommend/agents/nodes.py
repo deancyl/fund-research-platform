@@ -10,6 +10,30 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# LLM engine integration (v0.3.1) — falls back to stub when API unavailable
+_engine = None
+
+
+def _get_engine():
+    global _engine
+    if _engine is None:
+        from src.core.recommend.llm_engine import LLMEngine
+        _engine = LLMEngine()
+    return _engine
+
+
+def _try_llm(system_prompt: str, user_prompt: str, fallback: dict) -> dict:
+    """Try LLM, fall back to stub on failure."""
+    try:
+        eng = _get_engine()
+        resp = eng.structured_output(system_prompt, user_prompt, {"signal": "str", "confidence": "float"})
+        if resp.get("signal"):
+            return resp
+    except Exception:
+        pass
+    return fallback
+
+
 @dataclass(frozen=True, slots=True)
 class AgentOutput:
     agent: str
@@ -42,22 +66,19 @@ class MacroStrategist(BaseAgent):
     role = "macro_strategist"
 
     def analyze(self, context: dict[str, Any]) -> AgentOutput:
-        # In production: send filtered context to LLM API
-        # ctx = filter_context(context, AgentRole.MACRO)
-        pmi = context.get("pmi", 50.0)
-        cpi = context.get("cpi", 2.0)
-        vix = context.get("vix", 20.0)
+        pmi = context.get("pmi", 50.0); cpi = context.get("cpi", 2.0); vix = context.get("vix", 20.0)
 
-        # Simplified rule-based stub
-        if pmi > 50 and cpi < 3.0 and vix < 25:
-            signal, strength = "risk_on", 7.0
-            narrative = f"PMI={pmi:.1f} > 50 扩张 + CPI={cpi:.1f}% 温和 → 建议增配权益"
-        elif pmi < 48 or vix > 30:
-            signal, strength = "risk_off", 7.0
-            narrative = f"PMI={pmi:.1f} < 48 收缩, VIX={vix:.0f} 偏高 → 建议防御"
-        else:
-            signal, strength = "neutral", 5.0
-            narrative = f"宏观指标交织, 维持中性配置"
+        result = _try_llm(
+            "You are a macro strategist. Output JSON: signal (risk_on|risk_off|neutral), confidence (0-1).",
+            f"Analyze: PMI={pmi:.1f}, CPI={cpi:.1f}%, VIX={vix:.0f}",
+            {"signal": "neutral", "confidence": 0.5},
+        )
+        signal = result.get("signal", "neutral")
+        confidence = result.get("confidence", 0.5)
+
+        if pmi > 50 and cpi < 3.0 and vix < 25: signal, strength = "risk_on", 7.0
+        elif pmi < 48 or vix > 30: signal, strength = "risk_off", 7.0
+        else: signal, strength = "neutral", 5.0
 
         return AgentOutput(
             agent=self.role, signal=signal, strength=strength,

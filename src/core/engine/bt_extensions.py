@@ -14,13 +14,12 @@ from datetime import time as _time
 
 class AShareSlippageModel:
     """
-    A-Share specific trade constraints injected into Backtrader.
+    A-Share directional liquidity freeze model (v0.3.1 audit fix).
 
-    Rules enforced:
-      1. Price limits: ±10% (main), ±20% (ChiNext/STAR), ±5% (ST).
-      2. If a bar hits limit-up → BUY orders are rejected (no liquidity).
-      3. If a bar hits limit-down → SELL orders are rejected.
-      4. T+1: signal at T close → executed at T+1 open.
+    Limit-up (high==low==close >= limit): BUY is blocked (no sellers), SELL is allowed.
+    Limit-down (high==low==close <= limit): SELL is blocked (no buyers), BUY is allowed.
+
+    This is NOT symmetric — liquidity freezes in ONE direction only.
     """
 
     MAIN_LIMIT: float = 0.10
@@ -30,24 +29,32 @@ class AShareSlippageModel:
     def __init__(self, board: str = "main") -> None:
         self._limit = {"main": self.MAIN_LIMIT, "gem": self.GEM_LIMIT, "st": self.ST_LIMIT}.get(board, self.MAIN_LIMIT)
 
-    def can_buy(self, open_price: float, high: float, low: float, close: float) -> bool:
-        """Check if a BUY order can execute (not locked at limit-up)."""
+    def can_execute(self, open_price: float, high: float, low: float, close: float, is_buy: bool) -> bool:
+        """
+        Directional liquidity check.
+
+        Returns False if the order CANNOT execute (must be queued/deferred).
+        """
         prev_close = open_price / (1.0 + self._limit)
         limit_up = prev_close * (1.0 + self._limit)
-
-        # If open == high == limit_up → locked limit-up, no BUY possible
-        if high == low and abs(high - limit_up) < 1e-8:
-            return False
-        return True
-
-    def can_sell(self, open_price: float, high: float, low: float, close: float) -> bool:
-        """Check if a SELL order can execute (not locked at limit-down)."""
-        prev_close = open_price / (1.0 - self._limit)
         limit_down = prev_close * (1.0 - self._limit)
 
-        if high == low and abs(low - limit_down) < 1e-8:
-            return False
+        locked_up = high == low and abs(close - limit_up) < 1e-8
+        locked_down = high == low and abs(close - limit_down) < 1e-8
+
+        if locked_up and is_buy:
+            return False  # Limit-up: no sellers → BUY blocked
+        if locked_down and not is_buy:
+            return False  # Limit-down: no buyers → SELL blocked
         return True
+
+    def can_buy(self, *args) -> bool:
+        """Legacy API: delegate to can_execute."""
+        return self.can_execute(*args, is_buy=True)
+
+    def can_sell(self, *args) -> bool:
+        """Legacy API: delegate to can_execute."""
+        return self.can_execute(*args, is_buy=False)
 
 
 # ─── Order Cutoff Middleware ──────────────────────────────────────────────────
