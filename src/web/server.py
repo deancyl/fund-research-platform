@@ -54,6 +54,7 @@ DASHBOARD = rf"""<!DOCTYPE html>
 <main class="flex-1 bg-[#0d1117] p-4 overflow-y-auto flex flex-col space-y-4">
 <section class="bg-[#161b22] border border-[#30363d] rounded-lg p-4 min-h-[140px]">
 <h2 class="text-sm font-semibold text-sky-400 mb-3">📋 持仓明细 <span class="text-xs text-[#8b949e] font-mono" v-if="portfolio.length">市值: ¥{{totalValue.toLocaleString()}}</span></h2>
+<div class="flex items-center gap-2 mb-2"><input v-model="fundSearchCode" @keyup.enter="searchFund" placeholder="输入基金代码如 005827 或 510300" class="bg-[#0d1117] border border-[#30363d] rounded px-2 py-1 text-xs text-sky-400 w-40"><button @click="searchFund" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-2 py-1 rounded">查看K线</button><span v-if="profile" class="text-xs text-emerald-400">{{profile.fund_name}} | {{profile.manager}} | {{profile.total_asset}}亿</span></div>
 <div class="overflow-x-auto"><table class="w-full text-left text-xs">
 <thead><tr class="border-b border-[#30363d] text-[#8b949e]"><th class="py-2 px-3">代码</th><th class="py-2 px-3">名称</th><th class="py-2 px-3">通道</th><th class="py-2 px-3">净值</th><th class="py-2 px-3">权重</th></tr></thead>
 <tbody><tr v-for="pos in portfolio" class="border-b border-[#30363d] hover:bg-[#30363d]/20"><td class="py-2 px-3 font-mono font-bold text-sky-400">{{pos.fund_code}}</td><td class="py-2 px-3">{{pos.fund_name}}</td><td class="py-2 px-3"><span class="px-1 py-0.5 rounded bg-slate-800 text-[10px] text-slate-400 font-mono">{{pos.channel}}</span></td><td class="py-2 px-3 font-mono text-amber-400">{{pos.current_nav.toFixed(4)}}</td><td class="py-2 px-3 font-mono text-sky-300 font-bold">{{(pos.weight_pct*100).toFixed(1)}}%</td></tr></tbody></table></div></section>
@@ -74,6 +75,10 @@ DASHBOARD = rf"""<!DOCTYPE html>
 const{{createApp,ref,onMounted,computed}}=Vue;
 createApp({{setup(){{const portfolio=ref([]);const actions=ref([]);const totalValue=ref(0);const aiNote=ref('等待注入持仓...');const loading=ref(false);
 const targetWeights=ref({{'005827':0.2,'510300':0.8}});let chart=null,ws=null;
+const fundSearchCode=ref('');const profile=ref(null);
+const searchFund=async()=>{{if(!fundSearchCode.value.trim())return;try{{const[pr,kr]=await Promise.all([fetch('/api/fund/profile?code='+fundSearchCode.value),fetch('/api/fund/kline?code='+fundSearchCode.value)]);profile.value=await pr.json();const kd=await kr.json();initCandleChart(kd.bars,profile.value.fund_name);addLog('📈 '+profile.value.fund_name+' K线已加载')}}catch(e){{addLog('❌ 查询失败: '+e.message)}}}};
+const initCandleChart=(bars,name)=>{{const d=document.getElementById('chart');if(!d)return;if(!chart)chart=echarts.init(d,'dark');chart.setOption({{backgroundColor:'transparent',tooltip:{{trigger:'axis'}},grid:{{top:'20%',bottom:'15%',left:'12%',right:'8%'}},title:{{text:name,textStyle:{{fontSize:13,color:'#f0f6fc'}}}},xAxis:{{type:'category',data:bars.map(b=>b.date.slice(5)),axisLabel:{{rotate:45,fontSize:8,color:'#8b949e'}}}},yAxis:{{type:'value',scale:true,name:'价格',axisLabel:{{color:'#8b949e',fontSize:9}}}},series:[{{type:'candlestick',data:bars.map(b=>[b.open,b.close,b.low,b.high]),itemStyle:{{color:'#ef4444',color0:'#22c55e',borderColor:'#ef4444',borderColor0:'#22c55e'}}}}]}})}};
+const targetWeights=ref({{'005827':0.2,'510300':0.8}});let chart=null,ws=null;
 const totalWeightPct=computed(()=>Object.values(targetWeights.value).reduce((a,b)=>a+b,0));
 const normalizeWeights=()=>{{const s=totalWeightPct.value||1;Object.keys(targetWeights.value).forEach(k=>targetWeights.value[k]=Math.round(targetWeights.value[k]/s*100)/100)}};
 const sample={{portfolio:[{{fund_code:'005827',fund_name:'易方达蓝筹精选',category:'EQUITY',channel:'OTC_OPEN_END',current_nav:1.85,total_shares:38000,market_value:70300,weight_pct:0.65,lots:[{{purchase_date:'2026-06-10',shares:8000,purchase_nav:1.92,cost_amount:15360}},{{purchase_date:'2026-01-15',shares:30000,purchase_nav:1.80,cost_amount:54000}}]}}],target_weights:{{'005827':0.2,'510300':0.8}},total_value:108153}};
@@ -84,12 +89,18 @@ const executeAudit=async()=>{{loading.value=true;try{{const payload={{portfolio:
 const initChart=tl=>{{const d=document.getElementById('chart');if(!d)return;if(!chart)chart=echarts.init(d,'dark');const x=(tl||[]).map(e=>'T+'+e.t_day+'d');const y=(tl||[]).map((_,i)=>60000+i*12000);chart.setOption({{backgroundColor:'transparent',tooltip:{{trigger:'axis'}},grid:{{top:'20%',bottom:'15%',left:'12%',right:'8%'}},xAxis:{{type:'category',data:x.length?x:['T+0','T+4','T+8'],axisLabel:{{color:'#8b949e',fontSize:10}}}},yAxis:{{type:'value',name:'现金(元)',axisLabel:{{color:'#8b949e',fontSize:9}}}},series:[{{data:y.length?y:[0,30000,70000],type:'line',step:'end',color:'#58a6ff',symbol:'circle',symbolSize:6}}]}})}};
 const connectWS=()=>{{ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');ws.onopen=()=>addLog('🔗 Agent辩论系统已连接');ws.onmessage=e=>{{try{{const d=JSON.parse(e.data);if(d.type==='agent_log')addLog(d.msg)}}catch{{}}}};ws.onclose=()=>{{addLog('🔌 断开, 5s重连');setTimeout(connectWS,5000)}}}};
 onMounted(()=>{{initChart(null);connectWS();window.addEventListener('resize',()=>chart&&chart.resize())}});
-return{{portfolio,actions,totalValue,aiNote,loading,targetWeights,totalWeightPct,normalizeWeights,loadSample,handleDrop,executeAudit,addLog}}}}).mount('#app');
+return{{portfolio,actions,totalValue,aiNote,loading,targetWeights,totalWeightPct,normalizeWeights,loadSample,handleDrop,executeAudit,addLog,fundSearchCode,profile,searchFund}}}}).mount('#app');
 </script></body></html>"""
 
 
-@app.get("/");def dashboard()->HTMLResponse:return HTMLResponse(content=DASHBOARD)
-@app.get("/api/health");def health()->dict:return {"status":"ok","version":VERSION}
+@app.get("/")
+def dashboard() -> HTMLResponse:
+    return HTMLResponse(content=DASHBOARD)
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok", "version": VERSION}
 
 @app.post("/api/rebalance")
 def rebalance(req: RebalanceWebRequest) -> dict:
@@ -102,6 +113,16 @@ def rebalance(req: RebalanceWebRequest) -> dict:
         plan=generate_rebalance_plan(current_portfolio=core,target_weights=req.target_weights,current_date=_date.fromisoformat(req.analysis_date),total_portfolio_value=req.total_value)
         return {"status":plan.status,"total_friction_cost_yuan":plan.total_friction_cost_yuan,"ai_advisor_note":plan.ai_advisor_note,"actions":[{"fund_code":a.fund_code,"fund_name":a.fund_name,"action":a.action_type,"amount":a.amount,"estimated_fee":a.estimated_fee,"reason":a.reason,"skip_reason":a.skip_reason} for a in plan.actions],"timeline":[{"t_day":e.t_day,"event":e.event} for e in plan.timeline]}
     except (KeyError,ValueError,TypeError) as e:raise HTTPException(status_code=400,detail=str(e))
+
+@app.get("/api/fund/profile")
+def fund_profile(code: str):
+    from src.core.api import get_fund_profile
+    return get_fund_profile(code)
+
+@app.get("/api/fund/kline")
+def fund_kline(code: str, limit: int = 60):
+    from src.core.api import get_fund_kline
+    return {"fund_code": code, "bars": get_fund_kline(code, limit)}
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):

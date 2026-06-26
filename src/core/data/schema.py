@@ -156,3 +156,29 @@ class FundPosition(BaseModel, frozen=True):
             )
             raise ValueError(msg)
         return self
+
+
+# ─── Fund Profile & K-Line DTOs (v0.3.3) ───────────────────────────────────
+
+
+class FundProfileDTO(BaseModel, frozen=True):
+    """Fund/ETF core profile snapshot."""
+
+    fund_code: str = Field(min_length=6, max_length=6)
+    fund_name: str = Field(min_length=1)
+    manager: str = Field(default="")
+    establishment_date: str = Field(default="")
+    total_asset: float = Field(default=0.0, ge=0, description="AUM in 100M CNY")
+    top_ten_stocks: list[dict[str, object]] = Field(default_factory=list)
+    style_box: str = Field(default="Unknown")
+
+
+class KLineBar(BaseModel, frozen=True):
+    """OHLCV K-line bar (forward-adjusted for ETFs)."""
+
+    date: str
+    open: float = Field(gt=0)
+    high: float = Field(gt=0)
+    low: float = Field(gt=0)
+    close: float = Field(gt=0)
+    volume: float = Field(ge=0)

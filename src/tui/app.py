@@ -11,7 +11,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Grid
 from textual.widgets import DataTable, Footer, Header, Input, Label, Log, Static
 
-from src.core.api import generate_rebalance_plan
+from src.core.api import generate_rebalance_plan, get_fund_kline, get_fund_profile
 from src.core.data.schema import FundCategory, FundChannel, FundPosition, PositionLot
 from src.core.version import VERSION
 
@@ -156,9 +156,38 @@ class FundResearchTUI(App):
         if not q:
             self._write_log("📁 空路径 → 默认诊断", "info")
         else:
-            self._write_log(f"📁 路径: {q}", "info")
+            self._write_log(f"🔎 搜索: {q}", "info")
         self._update_status("⏳ 诊断中...")
-        self.run_worker(self._diagnose(), thread=True)
+        # If input looks like a fund code, render K-line + profile
+        if len(q) == 6 and q.isdigit():
+            self.run_worker(self._render_kline(q), thread=True)
+        else:
+            self.run_worker(self._diagnose(), thread=True)
+
+    async def _render_kline(self, fund_code: str) -> None:
+        """Render K-line chart + fund profile on worker thread."""
+        import plotext as plt
+        kline = get_fund_kline(fund_code, limit=40)
+        profile = get_fund_profile(fund_code)
+        plt.clf(); plt.theme("dark")
+        dates = [b["date"][-5:] for b in kline]
+        closes = [b["close"] for b in kline]
+        plt.plot(dates, closes, label="close", color="cyan")
+        for b in kline:
+            if b["close"] >= b["open"]:
+                plt.candlestick(dates, [b["open"]], [b["high"]], [b["low"]], [b["close"]])
+        plt.title(f"{profile['fund_name']} ({fund_code})")
+        canvas = plt.build()
+        self.call_from_thread(self._on_kline_done, canvas, profile)
+
+    def _on_kline_done(self, canvas: str, profile: dict) -> None:
+        self.query_one("#chart", Static).update(canvas)
+        self.query_one("#portfolio", Static).update(
+            f"🏦 {profile['manager']} | 成立{profile['establishment_date']} | 规模{profile['total_asset']}亿\n"
+            f"风格: [{profile['style_box']}] | 重仓: " +
+            ", ".join([f"{s['name']}({s['pct']}%)" for s in profile.get("top_ten_stocks", [])[:3]])
+        )
+        self._update_status(f"📈 {profile['fund_name']} ({profile['fund_code']}) K线+画像就绪")
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
