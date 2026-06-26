@@ -57,6 +57,10 @@ ignore = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-v", "--tb=short", "--strict-markers"]
+asyncio_mode = "auto"
+markers = [
+    "asyncio: mark test as async (Textual Pilot)",
+]
 
 [build-system]
 requires = ["setuptools>=75.0.0"]
