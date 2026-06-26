@@ -1,6 +1,6 @@
 [project]
 name = "fund-research-platform"
-version = "0.1.0"
+version = "0.3.1"
 description = "中国基金/指数基金 AI 投研平台 — Headless Core"
 requires-python = ">=3.11"
 readme = "README.md"
