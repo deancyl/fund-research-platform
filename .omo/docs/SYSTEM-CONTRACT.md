@@ -164,3 +164,11 @@
 - **CPCV逐窗口剪裁**: Combinatorial Purged CV必须对每个连续测试窗口的左右边界分别执行Purge和Embargo，严禁对全局train_idx使用`[:-purge_n]`一刀切截断——这会彻底摧毁Combinatorial的多路径自由组合特性。
 - **DSR概率输出**: `deflated_sharpe_ratio`返回值必须经`stats.norm.cdf()`映射为[0,1]置信概率，严禁直接返回原始z-score统计量(>1的值会使风控门控判定失效)。
 - **异构因子去量纲**: 北向资金流与机构主力流因统计口径不同存在数量级鸿沟，融合前必须在横截面上执行z-score标准化或百分位排名(sigmoid映射)，严禁原始值直接相加平均——会导致大因子吞噬小因子信号。
+
+### 15. Phase 6 Agent 核心规则（v0.1.9 沉淀）
+
+- **信息隔离**: 每个Agent只能看到其角色允许的数据子集。Macro→宏观指标, Quant→技术指标, Risk→持仓, CIO→全知。违反隔离的Agent输出应被丢弃。
+- **置信度校准**: 冷启动(样本<50)时必须向0.5回归(shrink prior)。不得直接使用LLM的raw confidence。
+- **事实锚定**: Agent的每条数据引用必须与available_data交叉验证。引用不存在的数据→HALLUCINATION标记。数值偏差>1%→FACTUAL_ERROR标记。
+- **双LLM交叉验证**: 结论完全一致→1.0x; 方向一致但强度不同→0.7x; 方向矛盾→强制HOLD(0.3x)。
+- **多期归因**: 单期Brinson不能直接加总为多期。必须通过Carino对数平滑系数 k_t = [ln(1+R_p)-ln(1+R_b)]/[R_p-R_b] 进行加权复合。
