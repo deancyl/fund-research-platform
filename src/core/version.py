@@ -1,8 +1,8 @@
-"""Single source of truth — dynamic from pyproject.toml, fallback for dev."""
+"""Single source of truth — reads pyproject.toml directly, no package reinstall needed."""
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+import tomllib
+from pathlib import Path
 
-try:
-    VERSION = _pkg_version("fund-research-platform")
-except PackageNotFoundError:
-    VERSION = "0.3.1"
+_pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
+with open(_pyproject, "rb") as _f:
+    VERSION: str = tomllib.load(_f)["project"]["version"]

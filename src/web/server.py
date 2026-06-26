@@ -48,7 +48,7 @@ DASHBOARD = rf"""<!DOCTYPE html>
 <h3 class="text-xs font-bold text-[#8b949e] uppercase tracking-wider">🎚️ 目标权重 (拖拽滑块)</h3>
 <div v-for="(w,code) in targetWeights" :key="code" class="bg-[#0d1117] rounded p-2 border border-[#30363d]">
 <div class="flex justify-between text-xs mb-1"><span class="font-mono text-sky-400">{{code}}</span><span class="text-amber-400">{{(w*100).toFixed(0)}}%</span></div>
-<input type="range" v-model.number="targetWeights[code]" min="0" max="1" step="0.05" class="w-full accent-sky-500 h-1"></div>
+<input type="range" v-model.number="targetWeights[code]" min="0" max="1" step="0.05" class="w-full accent-sky-500 h-1" @input="onSliderChange"></div>
 <div class="flex justify-between text-[10px] text-[#8b949e] mt-1"><span>总权重: {{totalWeightPct.toFixed(0)}}%</span><button @click="normalizeWeights" class="text-sky-400 hover:text-sky-300">归一化</button></div></div>
 <button @click="executeAudit" :disabled="loading" class="w-full py-2.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 text-white font-bold rounded text-xs tracking-wide transition shadow-lg shrink-0">{{ loading ? '清算中...' : '⚡ 发起再平衡审计' }}</button></aside>
 <main class="flex-1 bg-[#0d1117] p-4 overflow-y-auto flex flex-col space-y-4">
@@ -87,9 +87,10 @@ const handleDrop=e=>{{const f=e.dataTransfer.files[0];if(!f)return;const r=new F
 const addLog=msg=>{{const el=document.getElementById('agent-log');if(el){{const d=document.createElement('div');d.textContent='['+new Date().toLocaleTimeString()+'] '+msg;el.prepend(d);if(el.children.length>50)el.removeChild(el.lastChild)}}}};
 const executeAudit=async()=>{{loading.value=true;try{{const payload={{portfolio:portfolio.value.map(p=>({{...p}})),target_weights:targetWeights.value,total_value:totalValue.value}};const r=await fetch('/api/rebalance',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const d=await r.json();actions.value=d.actions||[];aiNote.value=d.ai_advisor_note||'OK';initChart(d.timeline);addLog('✅ 审计完成: 摩擦='+d.total_friction_cost_yuan);if(ws&&ws.readyState===1)ws.send(JSON.stringify({{type:'run_debate',portfolio:portfolio.value}}))}}catch(e){{addLog('❌ '+e.message)}}finally{{loading.value=false}}}};
 const initChart=tl=>{{const d=document.getElementById('chart');if(!d)return;if(!chart)chart=echarts.init(d,'dark');const x=(tl||[]).map(e=>'T+'+e.t_day+'d');const y=(tl||[]).map((_,i)=>60000+i*12000);chart.setOption({{backgroundColor:'transparent',tooltip:{{trigger:'axis'}},grid:{{top:'20%',bottom:'15%',left:'12%',right:'8%'}},xAxis:{{type:'category',data:x.length?x:['T+0','T+4','T+8'],axisLabel:{{color:'#8b949e',fontSize:10}}}},yAxis:{{type:'value',name:'现金(元)',axisLabel:{{color:'#8b949e',fontSize:9}}}},series:[{{data:y.length?y:[0,30000,70000],type:'line',step:'end',color:'#58a6ff',symbol:'circle',symbolSize:6}}]}})}};
-const connectWS=()=>{{ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');ws.onopen=()=>addLog('🔗 Agent辩论系统已连接');ws.onmessage=e=>{{try{{const d=JSON.parse(e.data);if(d.type==='agent_log')addLog(d.msg)}}catch{{}}}};ws.onclose=()=>{{addLog('🔌 断开, 5s重连');setTimeout(connectWS,5000)}}}};
+const connectWS=()=>{{ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');ws.onopen=()=>addLog('🔗 Agent辩论系统已连接');ws.onmessage=e=>{{try{{const d=JSON.parse(e.data);if(d.type==='agent_log')addLog(d.msg);if(d.type==='chart_update'&&d.timeline)initChart(d.timeline)}}catch{{}}}};ws.onclose=()=>{{addLog('🔌 断开,5s重连');setTimeout(connectWS,5000)}}}};
+let sliderTimer=null;const onSliderChange=()=>{{clearTimeout(sliderTimer);sliderTimer=setTimeout(()=>{{if(ws&&ws.readyState===1)ws.send(JSON.stringify({{type:'slider_change',weights:targetWeights.value}}));addLog('🎚️ 权重变更已推送后端')}},500)}};
 onMounted(()=>{{initChart(null);connectWS();window.addEventListener('resize',()=>chart&&chart.resize())}});
-return{{portfolio,actions,totalValue,aiNote,loading,targetWeights,totalWeightPct,normalizeWeights,loadSample,handleDrop,executeAudit,addLog,fundSearchCode,profile,searchFund}}}}).mount('#app');
+return{{portfolio,actions,totalValue,aiNote,loading,targetWeights,totalWeightPct,normalizeWeights,loadSample,handleDrop,executeAudit,addLog,fundSearchCode,profile,searchFund,onSliderChange}}}}).mount('#app');
 </script></body></html>"""
 
 
@@ -135,6 +136,19 @@ async def ws_endpoint(ws: WebSocket):
                 if payload.get("type")=="run_debate":
                     for msg in ["📊 Macro: 分析宏观指标...","📈 Quant: 计算因子暴露...","🛡️ Risk: 检查持仓集中度...","🎯 CIO: 综合判决输出..."]:
                         await ws.send_json({"type":"agent_log","msg":msg})
+                if payload.get("type")=="slider_change":
+                    # Rapid backtest recalculation on slider change
+                    try:
+                        from src.core.api import generate_rebalance_plan
+                        from src.core.data.schema import FundCategory,FundChannel,FundPosition,PositionLot
+                        from datetime import date as _d
+                        sample_lot=PositionLot(purchase_date=_d(2026,1,15),shares=30000,purchase_nav=1.80,cost_amount=54000)
+                        sample_pos=FundPosition(fund_code="005827",fund_name="易方达蓝筹",category=FundCategory.EQUITY,channel=FundChannel.OTC_OPEN_END,lots=[sample_lot],current_nav=1.85,total_shares=30000,market_value=55500,weight_pct=0.65)
+                        plan=generate_rebalance_plan(current_portfolio=[sample_pos],target_weights=payload.get("weights",{}),current_date=_d(2026,6,26),total_portfolio_value=108153)
+                        await ws.send_json({"type":"chart_update","timeline":[{"t_day":e.t_day,"event":e.event} for e in plan.timeline],"total_friction":plan.total_friction_cost_yuan})
+                        await ws.send_json({"type":"agent_log","msg":f"📊 权重变更→摩擦: ¥{plan.total_friction_cost_yuan:.0f}"})
+                    except Exception as ex:
+                        await ws.send_json({"type":"agent_log","msg":f"❌ 回测失败: {ex}"})
                 await ws.send_json({"type":"ack"})
             except:await ws.send_json({"type":"ack"})
     except WebSocketDisconnect:logger.info("WS dc: %s",cid)

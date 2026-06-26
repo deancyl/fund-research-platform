@@ -72,7 +72,21 @@ class FundResearchTUI(App):
         wl.add_columns("代码", "名称", "净值", "涨跌%", "持仓占比")
         recs = self.query_one("#recommendations", DataTable)
         recs.clear(columns=True)
-        recs.add_columns("动作", "代码", "名称", "金额", "规费", "理由")
+        recs.add_columns("动作", "代码", "名称", "金额", "规费", "理由/风控")
+
+    # ── Row click: select fund → render K-line + profile ──────────────
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Click a fund row in watchlist → render K-line + profile."""
+        table = event.data_table
+        if table.id == "watchlist":
+            row_key = event.row_key
+            if row_key is not None:
+                row = table.get_row(row_key)
+                if row and len(row) >= 1:
+                    fund_code = str(row[0])
+                    self._update_status(f"📈 加载 {fund_code} K线...")
+                    self.run_worker(self._render_kline(fund_code), thread=True)
 
     # ── Portfolio diagnosis ───────────────────────────────────────────────
 
