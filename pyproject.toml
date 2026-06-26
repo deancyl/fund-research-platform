@@ -1,0 +1,63 @@
+[project]
+name = "fund-research-platform"
+version = "0.1.0"
+description = "中国基金/指数基金 AI 投研平台 — Headless Core"
+requires-python = ">=3.11"
+readme = "README.md"
+
+dependencies = [
+    "pydantic>=2.0.0",
+    "numpy>=1.26.0",
+    "polars>=1.0.0",
+    "duckdb>=1.0.0",
+    "pyyaml>=6.0",
+    "python-dateutil>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "basedpyright>=1.0.0",
+    "ruff>=0.9.0",
+]
+data = [
+    "akshare>=1.18.0",
+    "baostock>=0.8.8",
+]
+analysis = [
+    "pandas-ta>=0.4.0",
+    "fincore>=0.7.0",
+]
+backtest = [
+    "vectorbt>=0.27.0",
+    "backtrader>=1.9.0",
+    "skfolio>=0.4.0",
+]
+tui = [
+    "textual>=0.70.0",
+    "plotext>=5.2.0",
+]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+]
+all = [
+    "fund-research-platform[dev,data,analysis,backtest,tui,web]",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["ALL"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "PLR2004", "SLF001", "D", "ARG", "INP001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-v", "--tb=short", "--strict-markers"]
+
+[build-system]
+requires = ["setuptools>=75.0.0"]
+build-backend = "setuptools.build_meta"
