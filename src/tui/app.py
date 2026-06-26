@@ -1,5 +1,5 @@
 """
-TUI adapter v0.1.6 — Active Hydration Lifecycle. No blank boot vacuum.
+TUI adapter v0.2.2 — Active Hydration Lifecycle. No blank boot vacuum.
 Per audit: on_ready auto-triggers portfolio diagnosis. No human keypress needed.
 Skeleton columns protect against IndexError. clear(columns=False) only.
 """
@@ -13,6 +13,7 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, Log, Static
 
 from src.core.api import generate_rebalance_plan
 from src.core.data.schema import FundCategory, FundChannel, FundPosition, PositionLot
+from src.core.version import VERSION
 
 logger = logging.getLogger("tui")
 logger.setLevel(logging.DEBUG)
@@ -40,7 +41,7 @@ class FundResearchTUI(App):
         ("l", "toggle_log", "日志"),
     ]
 
-    TITLE = "🏦 基金量化投研终端 v0.1.6"
+    TITLE = f"🏦 基金量化投研终端 v{VERSION}"
     _log_visible: bool = True
 
     def compose(self) -> ComposeResult:
@@ -56,11 +57,11 @@ class FundResearchTUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._write_log("🚀 TUI v0.1.6 骨架挂载", "info")
+        self._write_log(f"🚀 TUI v{VERSION} 骨架挂载", "info")
         self._setup_skeleton()
 
     async def on_ready(self) -> None:
-        """【v0.1.6】Auto-hydrate on boot — no human keypress needed."""
+        """Auto-hydrate on boot — no human keypress needed."""
         self._write_log("🎨 终端就绪，自动触发数据注水...", "info")
         self._update_status("⏳ 自动加载持仓数据中...")
         await self.action_refresh_portfolio()
@@ -174,5 +175,5 @@ class FundResearchTUI(App):
 
 
 def launch_tui() -> None:
-    logger.info("launch_tui: v0.1.6")
+    logger.info("launch_tui: v%s", VERSION)
     FundResearchTUI().run()

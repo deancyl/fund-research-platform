@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from src.core.api import generate_rebalance_plan
 from src.core.data.schema import FundCategory, FundChannel, FundPosition, PositionLot
+from src.core.version import VERSION
 
 logger = logging.getLogger("web")
 app = FastAPI(title="Fund Research Platform v0.1.7")
