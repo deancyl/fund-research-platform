@@ -15,6 +15,7 @@ from src.core.data.schema import FundCategory, FundChannel, FundPosition, Positi
 from src.core.data.lookup import FundLookupEngine
 from src.core.engine.ledger import LedgerEngine, TradeDirection
 from src.core.version import VERSION
+from src.tui.kline_screen import KLineScreen
 
 logger = logging.getLogger("tui")
 logger.setLevel(logging.DEBUG)
@@ -183,16 +184,16 @@ class FundResearchTUI(App):
         if q.startswith(":rem"):
             self._cmd_rem(q); return
 
-        # ── Fuzzy search ────────────────────────────────────────────
+        # ── Fuzzy search → KLineScreen ──────────────────────────
         matches = self._lookup.search(q)
         if matches:
-            fc = matches[0]["code"]; nm = matches[0]["name"]
-            self._update_status(f"📈 加载 {nm} ({fc}) K线...")
-            self.run_worker(self._render_kline(fc), thread=True)
-        elif q.isdigit() and len(q) >= 4:
-            self.run_worker(self._render_kline(q), thread=True)
-        else:
-            self._update_status(f"🔍 未匹配: {q}")
+            fc = matches[0]["code"]
+            self._update_status(f"📈 进入 {matches[0]['name']} K线界面...")
+            self.push_screen(KLineScreen(fc))
+            return
+        if q.isdigit() and len(q) >= 4:
+            self.push_screen(KLineScreen(q))
+            return
 
     def _cmd_add(self, cmd: str) -> None:
         """Parse :add CODE buy AMOUNT [DATE]"""
