@@ -1,6 +1,6 @@
 # 中国基金/指数基金 AI 投研平台
 
-> **v0.3.1** — Headless Core 架构 | 710 单元测试 | 20 策略 | TUI + Web + CLI 三端
+> **v0.4.2** — Headless Core 架构 | 710 单元测试 | 20 策略 | TUI + Web + CLI 三端
 
 ---
 
