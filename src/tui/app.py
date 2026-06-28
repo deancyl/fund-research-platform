@@ -247,12 +247,12 @@ class FundResearchTUI(App):
         kline = get_fund_kline(fund_code, limit=30)
         profile = get_fund_profile(fund_code)
         plt.clf(); plt.theme("dark")
-        dates = [b["date"][5:] for b in kline]
+        dates = [b["date"] for b in kline]  # full YYYY-MM-DD
         closes = [b["close"] for b in kline]
         opens = [b["open"] for b in kline]
         highs = [b["high"] for b in kline]
         lows = [b["low"] for b in kline]
-        plt.date_form("m-d")
+        plt.date_form("Y-m-d")
         plt.plot(dates, closes, label="收盘价", color="cyan")
         plt.plot(dates, highs, label="最高", color="gray")
         plt.plot(dates, lows, label="最低", color="gray")
