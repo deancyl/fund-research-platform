@@ -1357,19 +1357,19 @@ openai>=1.50.0  # DeepSeek API兼容
 
 ## 附录C: 实施进度追踪 (v0.1.0 → v0.1.7)
 
-**最后更新**: 2026-06-26 · **当前版本**: v0.1.9 · **测试**: 571/571 GREEN
+**最后更新**: 2026-06-26 · **当前版本**: v0.4.1 · **测试**: 710/710 GREEN
 
-### 总体进度: 56/89 (63%)
+### 总体进度: 61/89 (69%)
 
 | Phase | 已实现 | 总数 | 进度 |
 |-------|--------|------|------|
 | 1: 基础设施 | 7 | 9 | 78% |
 | 2: 分析引擎 | 5 | 7 | 71% |
-| 3: 回测引擎 | 8 | 13 | 62% |
-| 4: 策略库 | 14 | 15 | 93% |
-| 5: 市场状态 | 5 | 8 | 63% |
-| 6: AI 决策 | 7 | 13 | 54% |
-| 7: TUI 终端 | 7 | 12 | 58% |
+| 3: 回测引擎 | 9 | 13 | 69% |
+| 4: 策略库 | 15 | 15 | 100% |
+| 5: 市场状态 | 6 | 8 | 75% |
+| 6: AI 决策 | 8 | 13 | 62% |
+| 7: TUI 终端 | 8 | 12 | 67% |
 | 8: Web+验证 | 3 | 12 | 25% |
 
 ### 版本演进与外部审计修复记录
@@ -1386,6 +1386,18 @@ openai>=1.50.0  # DeepSeek API兼容
 | v0.1.7 | Web专业级分窗格大屏 (Vue3+Tailwind+ECharts) | 435 |
 | v0.1.8 | 审计#5: 4计量硬伤(factor_model共线性/CPCV剪裁/DSR概率/soe_reform量纲) + CrowdingMonitor/LoT/CH-3 + 4新策略 | 557 |
 | v0.1.9 | Phase 2: Multi-period Brinson Carino + Phase 6: 信息隔离/置信度校准/FactAnchoredAgent/DualLLMValidator | 571 |
+| v0.2.0 | Phase 6内存系统(Light/REM/Deep Sleep) + Phase 3 Monte Carlo block bootstrap | 577 |
+| v0.2.1 | S12风格轮动 + S16北向资金追随策略 | 633 |
+| v0.2.2 | Agent管道编排(Pipeline) + VectorBT/Backtrader回测stub | 640 |
+| v0.2.3 | S17量化打板 + S20 AI增强组合 — Phase 4策略100%完成 | 710 |
+| v0.2.4 | 审计#6: soe_reform未来函数修补 + factor_model死代码清理 | 710 |
+| v0.2.5 | Cross-sectional rank + bt_extensions(AShareSlippage/OrderCutoff/CashLock) + Agent节点 | 710 |
+| v0.3.0 | Sprint 2(Web滑块+拖拽+WS辩论流) + Sprint 1(LLM引擎) + Sprint 3(Backtest CLI) | 710 |
+| v0.3.1 | 方向性涨跌停 + LLM Agent接线 + Web滑块溢出约束 | 710 |
+| v0.3.2 | 版本号同步(pyproject+README+动态提取) + HMM stub + 中文UI计划 | 710 |
+| v0.3.3 | K线图+基金画像(TUI plotext + Web ECharts candlestick) | 710 |
+| v0.4.0 | 版本 tomllib 动态读取 + TUI行选联动K线 + 中文化标签 | 710 |
+| v0.4.1 | Web滑块 WebSocket Reactive 回测 + Agent辩论流式推送 | 710 |
 
 ### 已实现策略 (18/20)
 
