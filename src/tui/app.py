@@ -13,6 +13,7 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, Log, Static
 from src.core.api import generate_rebalance_plan, get_fund_kline, get_fund_profile
 from src.core.data.schema import FundCategory, FundChannel, FundPosition, PositionLot
 from src.core.data.lookup import FundLookupEngine
+from src.core.engine.ledger import LedgerEngine, TradeDirection
 from src.core.version import VERSION
 
 logger = logging.getLogger("tui")
@@ -53,6 +54,7 @@ class FundResearchTUI(App):
     TITLE = f"🏦 基金量化投研终端 v{VERSION}"
     _log_visible: bool = False
     _lookup: FundLookupEngine = FundLookupEngine()
+    _ledger: LedgerEngine = LedgerEngine()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -174,6 +176,14 @@ class FundResearchTUI(App):
         q = event.value.strip()
         event.input.clear()
         if q.lower() in ("q", "quit", "exit"): self.exit(); return
+
+        # ── Command palette: :add / :rem ────────────────────────────
+        if q.startswith(":add"):
+            self._cmd_add(q); return
+        if q.startswith(":rem"):
+            self._cmd_rem(q); return
+
+        # ── Fuzzy search ────────────────────────────────────────────
         matches = self._lookup.search(q)
         if matches:
             fc = matches[0]["code"]; nm = matches[0]["name"]
@@ -183,6 +193,53 @@ class FundResearchTUI(App):
             self.run_worker(self._render_kline(q), thread=True)
         else:
             self._update_status(f"🔍 未匹配: {q}")
+
+    def _cmd_add(self, cmd: str) -> None:
+        """Parse :add CODE buy AMOUNT [DATE]"""
+        parts = cmd.split()
+        if len(parts) < 4:
+            self._update_status("❌ 用法: :add CODE buy 金额 [YYYY-MM-DD]"); return
+        fund_code = parts[1]; date_str = parts[4] if len(parts) > 4 else str(date.today())
+        try:
+            amount = float(parts[3])
+            dt = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=10)
+            nav = 1.85  # stub — in production fetch from cache
+            entry = self._ledger.record_subscribe(fund_code, dt, amount, nav)
+            self._update_status(f"✅ 申购: {fund_code} ¥{amount:,.0f} → {entry.shares}份 [ID:{entry.tx_id}]")
+            self._refresh_ledger_panel()
+        except Exception as e:
+            self._update_status(f"❌ 命令错误: {e}")
+
+    def _cmd_rem(self, cmd: str) -> None:
+        """Parse :rem CODE sell SHARES [DATE]"""
+        parts = cmd.split()
+        if len(parts) < 4:
+            self._update_status("❌ 用法: :rem CODE sell 份额 [YYYY-MM-DD]"); return
+        fund_code = parts[1]; date_str = parts[4] if len(parts) > 4 else str(date.today())
+        try:
+            shares = float(parts[3])
+            dt = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=10)
+            nav = 1.85  # stub
+            entry = self._ledger.record_redeem(fund_code, dt, shares, nav)
+            warning = ""
+            if entry.fee_charged > 0:
+                rate = entry.fee_charged / (shares * nav) * 100
+                warning = f" ⚠️ 赎费¥{entry.fee_charged:,.2f} ({rate:.1f}%)"
+            self._update_status(f"✅ 赎回: {fund_code} {shares}份 → ¥{entry.amount:,.0f}{warning}")
+            self._refresh_ledger_panel()
+        except Exception as e:
+            self._update_status(f"❌ 命令错误: {e}")
+
+    def _refresh_ledger_panel(self) -> None:
+        """Update the ledger display in the chart/portfolio panel."""
+        entries = self._ledger.get_ledger()
+        lines = ["📒 调整流水账簿:"]
+        for e in entries[-5:]:
+            d = e.timestamp.strftime("%m-%d")
+            sign = "+" if e.direction == TradeDirection.SUBSCRIBE else "-"
+            amt = f"¥{e.amount:,.0f}" if e.amount else f"{e.shares}份"
+            lines.append(f"  {d} {e.fund_code} {sign} {amt} [费¥{e.fee_charged:,.0f}]")
+        self.query_one("#portfolio", Static).update("\n".join(lines))
 
     async def _render_kline(self, fund_code: str) -> None:
         import plotext as plt
