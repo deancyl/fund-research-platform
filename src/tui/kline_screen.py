@@ -33,7 +33,8 @@ class KLineScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield PlotextPlot()
+        self._plot = PlotextPlot()
+        yield self._plot
         yield Footer()
 
     def on_mount(self) -> None:
@@ -41,7 +42,8 @@ class KLineScreen(Screen):
         profile = get_fund_profile(self.fund_code)
         self.title = f"📈 {profile['fund_name']} ({self.fund_code})"
         self.start_idx = max(0, len(self.all_bars) - self.view_size)
-        self._render()
+        if self.all_bars:
+            self._render()
 
     def _render(self) -> None:
         """Render K-line + volume using plotext subplots."""
@@ -58,11 +60,11 @@ class KLineScreen(Screen):
         volumes = [b["volume"] for b in bars]
         price_labels = [b["date"][5:] for b in bars]  # MM-DD for x-axis
 
-        plot = self.query_one(PlotextPlot)
+        plot = self._plot
         plt = plot.plt
         plt.clear_figure()
         plt.subplots(2, 1)
-        plt.subplot(1, 1).title(f"{self.title} ({self.view_size}根K线)")
+        plt.subplot(1, 1).title(f"{self.title} ({self.view_size}K)")
         plt.date_form("")
         # Use numeric x-axis to avoid weekend gaps
         x_idx = list(range(len(dates)))
