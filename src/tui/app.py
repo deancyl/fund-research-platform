@@ -13,6 +13,7 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, Log, Static
 
 from src.core.api import generate_rebalance_plan, get_fund_kline, get_fund_profile
 from src.core.data.schema import FundCategory, FundChannel, FundPosition, PositionLot
+from src.core.data.lookup import FundLookupEngine
 from src.core.version import VERSION
 
 logger = logging.getLogger("tui")
@@ -43,6 +44,7 @@ class FundResearchTUI(App):
 
     TITLE = f"🏦 基金量化投研终端 v{VERSION}"
     _log_visible: bool = True
+    _lookup: FundLookupEngine = FundLookupEngine()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -167,16 +169,29 @@ class FundResearchTUI(App):
         if q.lower() in ("q", "quit", "exit"):
             self.exit()
             return
-        if not q:
-            self._write_log("📁 空路径 → 默认诊断", "info")
-        else:
-            self._write_log(f"🔎 搜索: {q}", "info")
-        self._update_status("⏳ 诊断中...")
-        # If input looks like a fund code, render K-line + profile
-        if len(q) == 6 and q.isdigit():
+        # Fuzzy search: partial code/name/pinyin → find first match
+        matches = self._lookup.search(q)
+        if matches:
+            fund_code = matches[0]["code"]
+            name = matches[0]["name"]
+            self._write_log(f"🔎 匹配: {name} ({fund_code})", "info")
+            self._update_status(f"📈 加载 {name} K线...")
+            self.run_worker(self._render_kline(fund_code), thread=True)
+        elif q.isdigit() and len(q) >= 4:
             self.run_worker(self._render_kline(q), thread=True)
         else:
+            self._write_log(f"🔎 搜索: {q} (未匹配)", "info")
             self.run_worker(self._diagnose(), thread=True)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """实时模糊匹配预览 — 输入代码/名称/拼音时显示匹配"""
+        q = event.value.strip()
+        if len(q) < 1:
+            return
+        matches = self._lookup.search(q)
+        if matches:
+            preview = ", ".join([f"{m['code']} {m['name']}" for m in matches[:3]])
+            self._update_status(f"🔎 {preview}")
 
     async def _render_kline(self, fund_code: str) -> None:
         """Render K-line chart + fund profile on worker thread."""
@@ -184,13 +199,13 @@ class FundResearchTUI(App):
         kline = get_fund_kline(fund_code, limit=40)
         profile = get_fund_profile(fund_code)
         plt.clf(); plt.theme("dark")
-        dates = [b["date"] for b in kline]  # full YYYY-MM-DD
+        dates = [b["date"] for b in kline]
+        opens = [b["open"] for b in kline]
+        highs = [b["high"] for b in kline]
+        lows = [b["low"] for b in kline]
         closes = [b["close"] for b in kline]
         plt.date_form("Y-m-d")
-        plt.plot(dates, closes, label="close", color="cyan")
-        for b in kline:
-            if b["close"] >= b["open"]:
-                plt.candlestick(dates, [b["open"]], [b["high"]], [b["low"]], [b["close"]])
+        plt.candlestick(dates, {"Open": opens, "High": highs, "Low": lows, "Close": closes})
         plt.title(f"{profile['fund_name']} ({fund_code})")
         canvas = plt.build()
         self.call_from_thread(self._on_kline_done, canvas, profile)
