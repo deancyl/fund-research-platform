@@ -61,7 +61,7 @@ class FundResearchTUI(App):
         yield Label("", id="summary-bar")
         with Grid(id="main-grid"):
             yield DataTable(id="watchlist", cursor_type="row")
-            yield Static("📊 输入基金代码或名称查看K线图", id="chart")
+            yield Static("📊 输入代码或名称查看走势图 (完整K线请用Web端)", id="chart")
             yield DataTable(id="recommendations", cursor_type="row")
             yield Static("📋 基金画像 | 点击自选列表基金行查看详情", id="portfolio")
         yield Label(" 💡 就绪 — /搜索 r刷新 s策略 q退出", id="status-bar")
@@ -242,16 +242,25 @@ class FundResearchTUI(App):
         self.query_one("#portfolio", Static).update("\n".join(lines))
 
     async def _render_kline(self, fund_code: str) -> None:
+        """Readable ASCII chart with OHLC markers (full candlestick → use Web)."""
         import plotext as plt
         kline = get_fund_kline(fund_code, limit=30)
         profile = get_fund_profile(fund_code)
         plt.clf(); plt.theme("dark")
-        dates = [b["date"] for b in kline]
-        opens = [b["open"] for b in kline]; highs = [b["high"] for b in kline]
-        lows = [b["low"] for b in kline]; closes = [b["close"] for b in kline]
-        plt.date_form("Y-m-d")
-        plt.candlestick(dates, {"Open": opens, "High": highs, "Low": lows, "Close": closes})
-        plt.title(f"{profile['fund_name']} ({fund_code}) 前复权K线")
+        dates = [b["date"][5:] for b in kline]
+        closes = [b["close"] for b in kline]
+        opens = [b["open"] for b in kline]
+        highs = [b["high"] for b in kline]
+        lows = [b["low"] for b in kline]
+        plt.date_form("m-d")
+        plt.plot(dates, closes, label="收盘价", color="cyan")
+        plt.plot(dates, highs, label="最高", color="gray")
+        plt.plot(dates, lows, label="最低", color="gray")
+        for i, (o, c) in enumerate(zip(opens, closes)):
+            marker = "▲" if c >= o else "▼"
+            color = "red" if c >= o else "green"
+            plt.scatter([dates[i]], [c], marker=marker, color=color)
+        plt.title(f"{profile['fund_name']} ({fund_code}) ▸ 完整K线请用Web端")
         canvas = plt.build()
         self.call_from_thread(self._on_kline_done, canvas, profile)
 
